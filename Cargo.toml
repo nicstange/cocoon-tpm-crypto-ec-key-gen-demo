@@ -1,0 +1,42 @@
+[package]
+name = "cocoon-tpm-crypto-ec-key-gen-demo"
+version = "0.1.0"
+edition = "2024"
+
+
+# For analyzing stack usage.
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+
+[dependencies]
+
+[dependencies.cmpa]
+git = "https://github.com/nicstange/cmpa-rs.git"
+branch = "master"
+default-features = false
+features=["enable_arch_math_asm"]
+
+[dependencies.cocoon-tpm-utils-common]
+git = "https://github.com/nicstange/cocoon-tpm.git"
+default-features = false
+
+[dependencies.cocoon-tpm-tpm2-interface]
+git = "https://github.com/nicstange/cocoon-tpm.git"
+default-features = false
+
+[dependencies.cocoon-tpm-crypto]
+git = "https://github.com/nicstange/cocoon-tpm.git"
+default-features = false
+features=[
+    "enable_arch_math_asm", "zeroize",
+    # Enable x86 rdseed based rng.
+    "enable_x86_64_rdseed",
+    # At least one of block cipher, mode and hash is needed,
+    # otherwise compilation will fail due to empty enums.
+    "aes", "cfb", "sha256", "sha384", "sha512",
+    "ecc", "ecdh", "ecdsa", "ecschnorr",
+    "ecc_nist_p192", "ecc_nist_p224",
+    "ecc_nist_p256", "ecc_nist_p384",
+    "ecc_nist_p521",
+]
