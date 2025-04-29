@@ -13,26 +13,34 @@ use cocoon_tpm_utils_common::{
     io_slices::{self, IoSlicesIterCommon as _},
 };
 
-// Instantiate a NIST Hash DRBG seeded from x86 rdseed.
+// For the pure rust cocoon-tpm-crypto backend, instantiate a NIST Hash DRBG seeded from x86 rdseed.
 // Don't inline for stack usage analysis purposes.
+#[cfg(not(feature = "boringssl"))]
 #[inline(never)]
-fn instantiate_rng() -> Result<rng::hash_drbg::HashDrbg, CryptoError> {
+fn instantiate_rng() -> Result<rng::HashDrbg, CryptoError> {
     // Error here if rdseed is unsupported.
-    let mut rdseed_rng =
-        rng::x86_64_rdseed::X86RdSeedRng::instantiate().map_err(|_| CryptoError::RngFailure)?;
+    let mut rdseed_rng = rng::X86RdSeedRng::instantiate().map_err(|_| CryptoError::RngFailure)?;
     let hash_drbg_entropy_len =
-        rng::hash_drbg::HashDrbg::min_seed_entropy_len(tpm2_interface::TpmiAlgHash::Sha256);
+        rng::HashDrbg::min_seed_entropy_len(tpm2_interface::TpmiAlgHash::Sha256);
     let mut hash_drbg_entropy = try_alloc_zeroizing_vec(hash_drbg_entropy_len)?;
     rdseed_rng.generate::<_, EmptyCryptoIoSlices>(
         io_slices::SingletonIoSliceMut::new(hash_drbg_entropy.as_mut_slice()).map_infallible_err(),
         None,
     )?;
-    rng::hash_drbg::HashDrbg::instantiate(
+    rng::HashDrbg::instantiate(
         tpm2_interface::TpmiAlgHash::Sha256,
         &hash_drbg_entropy,
         None, // Nonce. Could be some id unique to the VM instance.
         Some(b"SVSM primary rng"),
     )
+}
+
+// For the BoringSSL cocoon-tpm-crypto backend, instantiate a BsslRandBytesRng, forwarding the
+// request to OPENSSL_rand_bytes().  Don't inline for stack usage analysis purposes.
+#[cfg(feature = "boringssl")]
+#[inline(never)]
+fn instantiate_rng() -> Result<rng::BsslRandBytesRng, CryptoError> {
+    Ok(rng::BsslRandBytesRng::new())
 }
 
 // Generate an ECC key and return a pair of (public, private) key.
@@ -62,7 +70,7 @@ fn gen_ecc_key(
     let ecc_key = ecc::EccKey::generate(&curve_ops, rng, additional_rng_generate_input)?;
 
     // 4.) Unpeel.
-    let (pub_key, priv_key) = ecc_key.into_tpms(curve_ops.get_field_ops())?;
+    let (pub_key, priv_key) = ecc_key.into_tpms(&curve_ops)?;
     // The priv_key is always there after a generate operation, of course.
     let priv_key = priv_key.ok_or(CryptoError::Internal)?;
     Ok((pub_key, priv_key))
